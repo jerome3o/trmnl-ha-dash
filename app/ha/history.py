@@ -152,6 +152,12 @@ class ProgressCalculator:
         """
         Determine if ahead, on track, or behind.
 
+        Logic:
+        - If target_by_now < 1.0, being at 0 is "on track" (haven't missed a task yet)
+        - If current >= target_by_now, you're "ahead" or "on track"
+        - If current < floor(target_by_now), you're "behind" (missed a complete task)
+        - Otherwise "on track"
+
         Args:
             current: Current count
             target_by_now: Expected count
@@ -159,14 +165,23 @@ class ProgressCalculator:
         Returns:
             "ahead", "on_track", or "behind"
         """
-        diff = current - target_by_now
+        import math
 
-        if diff >= 0.5:
-            return "ahead"
-        elif diff <= -0.5:
-            return "behind"
-        else:
+        # Early in the week, being at 0 is fine until you should have completed 1 task
+        if target_by_now < 1.0 and current == 0:
             return "on_track"
+
+        # If you've completed more than expected, you're ahead
+        if current >= target_by_now + 0.5:
+            return "ahead"
+
+        # If you've missed a complete task (below the floor), you're behind
+        expected_completions = math.floor(target_by_now)
+        if current < expected_completions:
+            return "behind"
+
+        # Otherwise you're on track
+        return "on_track"
 
 
 async def demo_progress():
