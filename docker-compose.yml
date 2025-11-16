@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  trmnl-ha-dash:
+    build: .
+    container_name: trmnl-ha-dash
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+    environment:
+      - HA_URL=${HA_URL}
+      - HA_API_KEY=${HA_API_KEY}
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - DASHBOARD_REFRESH_INTERVAL=${DASHBOARD_REFRESH_INTERVAL:-900}
+      - CACHE_DURATION=${CACHE_DURATION:-300}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      # Persist device database
+      - ./data:/app/data
+      # Persist generated images (optional, can be regenerated)
+      - ./static/images:/app/static/images
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
