@@ -59,6 +59,12 @@ class ProgressCalculator:
                 except (ValueError, TypeError):
                     logger.warning(f"Invalid state for {goal.entity_id}: {state.get('state')}")
                     current_count = 0
+
+                # Update friendly name from state attributes (in case it was renamed in HA)
+                attributes = state.get("attributes", {})
+                friendly_name = attributes.get("friendly_name")
+                if friendly_name:
+                    goal.friendly_name = friendly_name
             else:
                 logger.warning(f"State not found for {goal.entity_id}")
                 current_count = 0
