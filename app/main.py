@@ -41,34 +41,19 @@ renderer = DashboardRenderer()
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Cache for rendered dashboard
-_dashboard_cache: Optional[tuple[str, str, datetime]] = None  # (filename, path, timestamp)
-
-
 def get_base_url(request: Request) -> str:
     """Get base URL for serving images."""
     return f"{request.url.scheme}://{request.headers.get('host', 'localhost')}"
 
 
-async def get_or_render_dashboard() -> tuple[str, str]:
+async def render_dashboard() -> tuple[str, str]:
     """
-    Get cached dashboard or render new one.
+    Render fresh dashboard from Home Assistant data.
 
     Returns:
         Tuple of (filename, file_path)
     """
-    global _dashboard_cache
-
-    # Check if cache is valid
-    if _dashboard_cache:
-        filename, file_path, timestamp = _dashboard_cache
-        age = (datetime.now() - timestamp).total_seconds()
-
-        if age < settings.cache_duration:
-            logger.info(f"Using cached dashboard (age: {age:.0f}s)")
-            return filename, file_path
-
-    logger.info("Rendering new dashboard...")
+    logger.info("Rendering dashboard with fresh data from HA...")
 
     # Connect to HA and render dashboard
     client = HAClient(settings.ha_url, settings.ha_api_key)
@@ -92,9 +77,6 @@ async def get_or_render_dashboard() -> tuple[str, str]:
         # Render dashboard
         week_start, week_end = calculator._get_current_week()
         filename, file_path = renderer.render(goals, week_start, week_end)
-
-        # Update cache
-        _dashboard_cache = (filename, file_path, datetime.now())
 
         return filename, file_path
 
@@ -153,8 +135,8 @@ async def display_endpoint(
             battery_voltage=battery_voltage,
         )
 
-    # Get or render dashboard
-    filename, file_path = await get_or_render_dashboard()
+    # Render fresh dashboard
+    filename, file_path = await render_dashboard()
 
     # Build image URL
     base_url = get_base_url(request)
@@ -193,10 +175,9 @@ async def setup_endpoint(
     if existing_device:
         logger.info(f"Device already exists: {existing_device.friendly_id}")
 
-        # Return existing credentials (use a simple welcome image)
+        # Return existing credentials with fresh dashboard
         base_url = get_base_url(request)
-        # For now, just point to the dashboard
-        filename, _ = await get_or_render_dashboard()
+        filename, _ = await render_dashboard()
         image_url = f"{base_url}/static/images/{filename}.png"
 
         return SetupResponse(
@@ -221,9 +202,9 @@ async def setup_endpoint(
 
     db.create_device(new_device)
 
-    # Return setup response with dashboard image
+    # Return setup response with fresh dashboard
     base_url = get_base_url(request)
-    filename, _ = await get_or_render_dashboard()
+    filename, _ = await render_dashboard()
     image_url = f"{base_url}/static/images/{filename}.png"
 
     logger.info(f"Device provisioned: {friendly_id} ({id})")
@@ -263,15 +244,19 @@ async def log_endpoint(
 @app.post("/api/refresh")
 async def refresh_endpoint():
     """
-    Force dashboard refresh (for testing).
+    Render dashboard immediately (for testing).
 
-    Clears cache and forces new render on next request.
+    Note: Cache is disabled, so every request gets fresh data anyway.
+    This endpoint is kept for backward compatibility.
     """
-    global _dashboard_cache
-    _dashboard_cache = None
-    logger.info("Dashboard cache cleared")
+    logger.info("Manual refresh requested")
+    filename, file_path = await render_dashboard()
 
-    return {"status": "success", "message": "Dashboard cache cleared"}
+    return {
+        "status": "success",
+        "message": "Dashboard rendered with fresh data",
+        "filename": filename,
+    }
 
 
 if __name__ == "__main__":

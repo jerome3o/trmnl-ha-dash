@@ -12,7 +12,6 @@ services:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8000
       - DASHBOARD_REFRESH_INTERVAL=${DASHBOARD_REFRESH_INTERVAL:-900}
-      - CACHE_DURATION=${CACHE_DURATION:-300}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       # Persist device database

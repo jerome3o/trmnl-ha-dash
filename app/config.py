@@ -20,8 +20,7 @@ class Settings(BaseSettings):
     # Dashboard
     dashboard_refresh_interval: int = int(
         os.getenv("DASHBOARD_REFRESH_INTERVAL", "900")
-    )  # 15 minutes
-    cache_duration: int = int(os.getenv("CACHE_DURATION", "300"))  # 5 minutes
+    )  # 15 minutes (how often TRMNL polls)
 
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
