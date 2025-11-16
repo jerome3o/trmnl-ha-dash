@@ -21,8 +21,8 @@ class ProgressCalculator:
         """
         Calculate current progress for all goals.
 
-        Queries HA history and updates goal objects with:
-        - current_count: Increments this week
+        Uses current counter state and updates goal objects with:
+        - current_count: Current counter value
         - target_by_now: Expected count by today
         - status: ahead/on_track/behind
         - days_left: Days remaining in week
@@ -38,24 +38,30 @@ class ProgressCalculator:
 
         logger.info(f"Calculating progress for {len(goals)} goals...")
 
-        # Get current week boundaries
+        # Get current week boundaries for status display
         week_start, week_end = self._get_current_week()
         logger.info(f"Current week: {week_start.date()} to {week_end.date()}")
 
-        # Query history for all goal entities
-        entity_ids = [goal.entity_id for goal in goals]
-        history = await self.client.get_history(
-            entity_ids=entity_ids,
-            start_time=week_start.isoformat(),
-            end_time=week_end.isoformat(),
-        )
+        # Get current states for all goal entities
+        states = await self.client.send_command("get_states")
+
+        # Create a mapping of entity_id to state
+        state_map = {state.get("entity_id"): state for state in states}
 
         # Calculate progress for each goal
         for goal in goals:
-            entity_history = history.get(goal.entity_id, [])
+            state = state_map.get(goal.entity_id)
 
-            # Count increments this week
-            current_count = self._count_increments(entity_history)
+            # Get current counter value
+            if state:
+                try:
+                    current_count = int(state.get("state", 0))
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid state for {goal.entity_id}: {state.get('state')}")
+                    current_count = 0
+            else:
+                logger.warning(f"State not found for {goal.entity_id}")
+                current_count = 0
 
             # Calculate expected progress
             day_of_week = self._get_day_of_week(datetime.now())
@@ -118,46 +124,6 @@ class ProgressCalculator:
         # Convert to: Sunday=0, Saturday=6
         return (dt.weekday() + 1) % 7
 
-    def _count_increments(self, history: list[dict]) -> int:
-        """
-        Count total increments from history.
-
-        Ignores decreases (resets) and only counts increases.
-
-        Args:
-            history: List of state changes from HA
-
-        Returns:
-            Total increment count
-        """
-        if not history:
-            return 0
-
-        total_increments = 0
-        prev_state = None
-
-        for state in history:
-            # Get state value (WebSocket format uses 's' key)
-            state_value = state.get("s") or state.get("state")
-
-            try:
-                current_int = int(state_value)
-
-                if prev_state is not None:
-                    prev_int = int(prev_state)
-
-                    # Only count positive increments (ignore resets)
-                    if current_int > prev_int:
-                        increment = current_int - prev_int
-                        total_increments += increment
-
-                prev_state = state_value
-
-            except (ValueError, TypeError):
-                logger.warning(f"Non-numeric state value: {state_value}")
-                continue
-
-        return total_increments
 
     def _calculate_target_by_now(self, weekly_target: int, day_of_week: int) -> float:
         """
