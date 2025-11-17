@@ -150,37 +150,22 @@ class ProgressCalculator:
 
     def _calculate_status(self, current: int, target_by_now: float) -> str:
         """
-        Determine if ahead, on track, or behind.
+        Determine if on track or behind.
 
         Logic:
-        - If target_by_now < 1.0, being at 0 is "on track" (haven't missed a task yet)
-        - If current >= target_by_now, you're "ahead" or "on track"
-        - If current < floor(target_by_now), you're "behind" (missed a complete task)
-        - Otherwise "on track"
+        - Compare progress fraction (current/weekly_target) to time fraction (days_elapsed/7)
+        - If current < target_by_now: "behind"
+        - Otherwise: "on_track"
 
         Args:
             current: Current count
-            target_by_now: Expected count
+            target_by_now: Expected count by now (weekly_target * days_elapsed / 7)
 
         Returns:
-            "ahead", "on_track", or "behind"
+            "on_track" or "behind"
         """
-        import math
-
-        # Early in the week, being at 0 is fine until you should have completed 1 task
-        if target_by_now < 1.0 and current == 0:
-            return "on_track"
-
-        # If you've completed more than expected, you're ahead
-        if current >= target_by_now + 0.5:
-            return "ahead"
-
-        # If you've missed a complete task (below the floor), you're behind
-        expected_completions = math.floor(target_by_now)
-        if current < expected_completions:
+        if current < target_by_now:
             return "behind"
-
-        # Otherwise you're on track
         return "on_track"
 
 
@@ -231,7 +216,7 @@ async def demo_progress():
 
         for goal in goals:
             emoji = goal.config.emoji or "•"
-            status_icon = {"ahead": "⭐", "on_track": "✓", "behind": "⚠"}[goal.status]
+            status_icon = {"on_track": "✓", "behind": "⚠"}[goal.status]
 
             print(f"{emoji} {goal.friendly_name}")
             print(f"  Progress: {goal.current_count}/{goal.config.weekly_target}")

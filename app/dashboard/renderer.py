@@ -171,7 +171,7 @@ class DashboardRenderer:
         target_text = f"Target: {goal.target_by_now:.1f}"
 
         # Status with icon
-        status_icons = {"ahead": "⭐ AHEAD", "on_track": "✓ ON TRACK", "behind": "⚠ BEHIND"}
+        status_icons = {"on_track": "✓ ON TRACK", "behind": "⚠ BEHIND"}
         status_text = status_icons[goal.status]
 
         # Draw text to right of progress bar
