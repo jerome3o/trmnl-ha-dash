@@ -92,7 +92,6 @@ class DashboardRenderer:
         # Draw sections
         self._draw_header(draw, week_start, week_end, width)
         self._draw_goals(draw, goals, width, height)
-        self._draw_footer(draw, goals, width, height)
 
         # Convert to monochrome
         image = self._convert_to_monochrome(image)
@@ -108,39 +107,50 @@ class DashboardRenderer:
         return filename, str(file_path)
 
     def _draw_header(self, draw: ImageDraw, week_start: datetime, week_end: datetime, width: int):
-        """Draw header with week info."""
+        """Draw header with week info and last update time."""
         # Week range
         week_text = f"Week: {week_start.strftime('%b %d')} - {week_end.strftime('%b %d, %Y')}"
-        draw.text((20, 15), week_text, fill="black", font=self.fonts["header"])
+        draw.text((20, 10), week_text, fill="black", font=self.fonts["title"])
 
-        # Current day
+        # Current day and last update on second line
         day_names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
         now = datetime.now()
         day_of_week = (now.weekday() + 1) % 7
         day_text = f"Day {day_of_week + 1} of 7 ({day_names[day_of_week]})"
+        draw.text((20, 32), day_text, fill="black", font=self.fonts["small"])
 
-        # Right-align day text
-        bbox = draw.textbbox((0, 0), day_text, font=self.fonts["normal"])
+        # Last update time (right-aligned)
+        time_text = f"Updated: {now.strftime('%H:%M')}"
+        bbox = draw.textbbox((0, 0), time_text, font=self.fonts["small"])
         text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - 20, 18), day_text, fill="black", font=self.fonts["normal"])
+        draw.text((width - text_width - 20, 32), time_text, fill="black", font=self.fonts["small"])
 
         # Divider line
-        draw.line([20, 50, width - 20, 50], fill="black", width=2)
+        draw.line([20, 52, width - 20, 52], fill="black", width=2)
 
     def _draw_goals(self, draw: ImageDraw, goals: list[Goal], width: int, height: int):
-        """Draw all goals with progress bars."""
-        y_offset = 70
+        """Draw all goals with progress bars, fitting to screen."""
+        if not goals:
+            return
 
+        header_height = 60  # Space used by header
+        bottom_margin = 10  # Small margin at bottom
+        available_height = height - header_height - bottom_margin
+
+        # Calculate spacing to fit all goals
+        num_goals = len(goals)
+        goal_height = min(60, available_height // num_goals)  # Cap at 60px per goal
+
+        y_offset = header_height
         for goal in goals:
-            if y_offset > height - 100:  # Leave room for footer
-                break
+            if y_offset + goal_height > height - bottom_margin:
+                break  # Stop if we truly run out of space
+            self._draw_goal_row(draw, goal, y_offset, width, goal_height)
+            y_offset += goal_height
 
-            self._draw_goal_row(draw, goal, y_offset, width)
-            y_offset += 85
-
-    def _draw_goal_row(self, draw: ImageDraw, goal: Goal, y: int, width: int):
-        """Draw a single goal with progress bar and status."""
-        x_margin = 30
+    def _draw_goal_row(self, draw: ImageDraw, goal: Goal, y: int, width: int, row_height: int = 60):
+        """Draw a single goal with full-width progress bar."""
+        x_margin = 20
 
         # Goal name with emoji
         if goal.config.emoji:
@@ -148,12 +158,12 @@ class DashboardRenderer:
         else:
             name_text = goal.friendly_name
 
-        draw.text((x_margin, y), name_text, fill="black", font=self.fonts["title"])
+        draw.text((x_margin, y), name_text, fill="black", font=self.fonts["normal"])
 
-        # Progress bar
-        bar_y = y + 35
-        bar_width = 400
-        bar_height = 25
+        # Progress bar - full width
+        bar_y = y + 22
+        bar_width = width - (x_margin * 2)
+        bar_height = row_height - 28  # Leave space for title and padding
 
         self._draw_progress_bar(
             draw,
@@ -165,24 +175,6 @@ class DashboardRenderer:
             target=goal.config.weekly_target,
             target_marker=goal.target_by_now,
         )
-
-        # Progress text and status
-        progress_text = f"{goal.current_count}/{goal.config.weekly_target}"
-        target_text = f"Target: {goal.target_by_now:.1f}"
-
-        # Status with icon
-        status_icons = {"on_track": "✓ ON TRACK", "behind": "⚠ BEHIND"}
-        status_text = status_icons[goal.status]
-
-        # Draw text to right of progress bar
-        text_x = x_margin + bar_width + 20
-        draw.text((text_x, bar_y - 5), progress_text, fill="black", font=self.fonts["normal"])
-        draw.text((text_x, bar_y + 15), target_text, fill="black", font=self.fonts["small"])
-
-        # Status (right-aligned)
-        bbox = draw.textbbox((0, 0), status_text, font=self.fonts["normal"])
-        status_width = bbox[2] - bbox[0]
-        draw.text((width - status_width - 30, bar_y + 3), status_text, fill="black", font=self.fonts["normal"])
 
     def _draw_progress_bar(
         self,
@@ -250,31 +242,6 @@ class DashboardRenderer:
             ],
             fill="black",
         )
-
-    def _draw_footer(self, draw: ImageDraw, goals: list[Goal], width: int, height: int):
-        """Draw footer with summary stats."""
-        y = height - 35
-
-        # Divider line
-        draw.line([20, y - 10, width - 20, y - 10], fill="black", width=2)
-
-        # Overall progress
-        total_current = sum(g.current_count for g in goals)
-        total_target = sum(g.config.weekly_target for g in goals)
-
-        if total_target > 0:
-            percentage = int((total_current / total_target) * 100)
-            summary_text = f"Overall: {total_current}/{total_target} ({percentage}%)"
-        else:
-            summary_text = "Overall: No goals"
-
-        draw.text((20, y), summary_text, fill="black", font=self.fonts["normal"])
-
-        # Last update time
-        time_text = f"Last update: {datetime.now().strftime('%H:%M')}"
-        bbox = draw.textbbox((0, 0), time_text, font=self.fonts["small"])
-        text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - 20, y + 2), time_text, fill="black", font=self.fonts["small"])
 
     def _convert_to_monochrome(self, image: Image) -> Image:
         """Convert image to monochrome for e-ink display."""
