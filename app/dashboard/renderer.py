@@ -129,27 +129,24 @@ class DashboardRenderer:
         draw.line([20, 52, width - 20, 52], fill="black", width=2)
 
     def _draw_goals(self, draw: ImageDraw, goals: list[Goal], width: int, height: int):
-        """Draw all goals with progress bars, fitting to screen."""
+        """Draw all goals with progress bars, evenly distributed."""
         if not goals:
             return
 
-        header_height = 60  # Space used by header
-        bottom_margin = 10  # Small margin at bottom
+        header_height = 62  # Space used by header
+        bottom_margin = 15  # Margin at bottom
         available_height = height - header_height - bottom_margin
 
-        # Calculate spacing to fit all goals
+        # Distribute goals evenly across available space
         num_goals = len(goals)
-        goal_height = min(60, available_height // num_goals)  # Cap at 60px per goal
+        goal_spacing = available_height / num_goals
 
-        y_offset = header_height
-        for goal in goals:
-            if y_offset + goal_height > height - bottom_margin:
-                break  # Stop if we truly run out of space
-            self._draw_goal_row(draw, goal, y_offset, width, goal_height)
-            y_offset += goal_height
+        for i, goal in enumerate(goals):
+            y_offset = header_height + int(i * goal_spacing)
+            self._draw_goal_row(draw, goal, y_offset, width)
 
-    def _draw_goal_row(self, draw: ImageDraw, goal: Goal, y: int, width: int, row_height: int = 60):
-        """Draw a single goal with full-width progress bar."""
+    def _draw_goal_row(self, draw: ImageDraw, goal: Goal, y: int, width: int):
+        """Draw a single goal with full-width slim progress bar."""
         x_margin = 20
 
         # Goal name with emoji
@@ -160,10 +157,10 @@ class DashboardRenderer:
 
         draw.text((x_margin, y), name_text, fill="black", font=self.fonts["normal"])
 
-        # Progress bar - full width
-        bar_y = y + 22
+        # Progress bar - full width, fixed slim height
+        bar_y = y + 20
         bar_width = width - (x_margin * 2)
-        bar_height = row_height - 28  # Leave space for title and padding
+        bar_height = 14  # Slim, consistent height
 
         self._draw_progress_bar(
             draw,
@@ -188,10 +185,10 @@ class DashboardRenderer:
         target_marker: float,
     ):
         """
-        Draw progress bar with target marker.
+        Draw slim progress bar with dotted target marker.
 
         The bar is divided into segments equal to target.
-        Target marker shows expected progress by today.
+        Target marker shows expected progress as a thin dotted line.
         """
         if target == 0:
             return
@@ -206,39 +203,47 @@ class DashboardRenderer:
             draw.rectangle(
                 [x, y, x + filled_width, y + height],
                 fill="black",
-                outline="black",
             )
 
-        # Draw empty segments outline
+        # Draw bar outline
         draw.rectangle(
             [x, y, x + width, y + height],
             outline="black",
-            width=2,
+            width=1,
         )
 
-        # Draw segment dividers
+        # Draw segment dividers (thin lines)
         for i in range(1, target):
             seg_x = x + int(i * segment_width)
             draw.line([seg_x, y, seg_x, y + height], fill="black", width=1)
 
-        # Draw target marker (vertical line)
+        # Draw target marker as dashed vertical line with small arrow
         marker_x = x + int(target_marker * segment_width)
-        marker_x = max(x, min(marker_x, x + width))  # Clamp to bar bounds
+        marker_x = max(x + 2, min(marker_x, x + width - 2))  # Clamp with padding
 
-        # Draw marker as thick vertical line
-        draw.line(
-            [marker_x, y - 8, marker_x, y + height + 8],
-            fill="black",
-            width=4,
-        )
+        # Dashed line pattern (more visible than dots)
+        dash_length = 4
+        gap_length = 3
+        marker_top = y - 6
+        marker_bottom = y + height + 6
+        current_y = marker_top
+        drawing = True
+        while current_y < marker_bottom:
+            if drawing:
+                end_y = min(current_y + dash_length, marker_bottom)
+                draw.line([marker_x, current_y, marker_x, end_y], fill="black", width=2)
+                current_y = end_y
+            else:
+                current_y += gap_length
+            drawing = not drawing
 
-        # Draw small triangle at top of marker
-        triangle_size = 6
+        # Small downward arrow at top
+        arrow_size = 3
         draw.polygon(
             [
-                (marker_x, y - 8),
-                (marker_x - triangle_size, y - 8 - triangle_size),
-                (marker_x + triangle_size, y - 8 - triangle_size),
+                (marker_x, marker_top),
+                (marker_x - arrow_size, marker_top - arrow_size),
+                (marker_x + arrow_size, marker_top - arrow_size),
             ],
             fill="black",
         )

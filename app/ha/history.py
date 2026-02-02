@@ -133,20 +133,26 @@ class ProgressCalculator:
 
     def _calculate_target_by_now(self, weekly_target: int, day_of_week: int) -> float:
         """
-        Calculate expected count by current day.
+        Calculate expected count by current time (moves smoothly throughout the day).
 
         Args:
             weekly_target: Goal for the full week (e.g., 4)
             day_of_week: 0=Sunday, 6=Saturday
 
         Returns:
-            Expected count by end of current day
+            Expected count by current moment (fractional days elapsed)
 
         Example:
-            weekly_target = 4, day_of_week = 3 (Wednesday)
-            = 4 * (4/7) = 2.29
+            weekly_target = 4, day_of_week = 3 (Wednesday), time = 12:00 noon
+            days_elapsed = 3.5 (3 full days + half of today)
+            = 4 * (3.5/7) = 2.0
         """
-        return weekly_target * ((day_of_week + 1) / 7)
+        now = datetime.now()
+        # Calculate fraction of today that has passed (0.0 at midnight, 1.0 at end of day)
+        day_fraction = (now.hour * 3600 + now.minute * 60 + now.second) / 86400
+        # Total days elapsed including partial current day
+        days_elapsed = day_of_week + day_fraction
+        return weekly_target * (days_elapsed / 7)
 
     def _calculate_status(self, current: int, target_by_now: float) -> str:
         """
