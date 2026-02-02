@@ -73,10 +73,11 @@ class ProgressCalculator:
                 logger.warning(f"State not found for {goal.entity_id}")
                 current_count = 0
 
-            # Calculate expected progress
+            # Calculate expected progress (weekly_target * 2 for 2-week period)
             day_of_period = self._get_day_of_period(datetime.now())
+            period_target = goal.config.weekly_target * 2  # Double for 2-week period
             target_by_now = self._calculate_target_by_now(
-                goal.config.weekly_target, day_of_period
+                period_target, day_of_period
             )
 
             # Determine status
@@ -92,7 +93,7 @@ class ProgressCalculator:
             goal.days_left = days_left
 
             logger.info(
-                f"  {goal.friendly_name}: {current_count}/{goal.config.weekly_target} "
+                f"  {goal.friendly_name}: {current_count}/{period_target} "
                 f"(target by now: {target_by_now:.1f}, status: {status})"
             )
 
@@ -229,9 +230,10 @@ async def demo_progress():
         for goal in goals:
             emoji = goal.config.emoji or "•"
             status_icon = {"on_track": "✓", "behind": "⚠"}[goal.status]
+            period_target = goal.config.weekly_target * 2  # 2-week target
 
             print(f"{emoji} {goal.friendly_name}")
-            print(f"  Progress: {goal.current_count}/{goal.config.weekly_target}")
+            print(f"  Progress: {goal.current_count}/{period_target} (weekly: {goal.config.weekly_target})")
             print(f"  Target by now: {goal.target_by_now:.1f}")
             print(f"  Status: {goal.status.upper()} {status_icon}")
             print(f"  Days left: {goal.days_left}")

@@ -164,6 +164,9 @@ class DashboardRenderer:
         bar_width = width - (x_margin * 2)
         bar_height = 14  # Slim, consistent height
 
+        # Double weekly_target for 2-week period display
+        period_target = goal.config.weekly_target * 2
+
         self._draw_progress_bar(
             draw,
             x=x_margin,
@@ -171,7 +174,7 @@ class DashboardRenderer:
             width=bar_width,
             height=bar_height,
             current=goal.current_count,
-            target=goal.config.weekly_target,
+            target=period_target,
             target_marker=goal.target_by_now,
         )
 
@@ -255,6 +258,18 @@ class DashboardRenderer:
             ],
             fill="black",
         )
+
+        # Draw weekend indicators (subtle tick marks below the bar)
+        # For a 2-week period starting Sunday:
+        # - Day 0: Sunday (start)
+        # - Day 7: Sunday (middle weekend)
+        # - Day 13: Saturday (end)
+        tick_y_top = y + height + 2
+        tick_y_bottom = y + height + 5
+        for day in [0, 7, 14]:  # Start, middle, end
+            tick_x = x + int((day / 14) * width)
+            tick_x = max(x, min(tick_x, x + width))
+            draw.line([tick_x, tick_y_top, tick_x, tick_y_bottom], fill="black", width=1)
 
     def _convert_to_monochrome(self, image: Image) -> Image:
         """Convert image to monochrome for e-ink display."""
