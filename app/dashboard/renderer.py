@@ -261,12 +261,14 @@ class DashboardRenderer:
 
         # Draw weekend indicators (subtle tick marks below the bar)
         # For a 2-week period starting Sunday:
-        # - Day 0: Sunday (start)
-        # - Day 7: Sunday (middle weekend)
-        # - Day 13: Saturday (end)
+        # - Day 0: Sunday (start of period)
+        # - Day 6: Saturday (start of middle weekend)
+        # - Day 7: Week boundary (middle of weekend)
+        # - Day 8: Monday (end of middle weekend)
+        # - Day 14: End of period
         tick_y_top = y + height + 2
         tick_y_bottom = y + height + 5
-        for day in [0, 7, 14]:  # Start, middle, end
+        for day in [0, 6, 7, 8, 14]:  # Start, weekend start, week boundary, weekend end, end
             tick_x = x + int((day / 14) * width)
             tick_x = max(x, min(tick_x, x + width))
             draw.line([tick_x, tick_y_top, tick_x, tick_y_bottom], fill="black", width=1)
