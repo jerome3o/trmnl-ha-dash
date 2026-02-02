@@ -101,11 +101,12 @@ class GoalDiscovery:
             # Parse JSON from description
             config_data = json.loads(description)
 
-            # Extract weekly_target (required)
+            # Extract weekly_target (required) - supports int or float (e.g., 1.5 for "3 per 2 weeks")
             weekly_target = config_data.get("weekly_target")
-            if not weekly_target or not isinstance(weekly_target, int):
+            if weekly_target is None or not isinstance(weekly_target, (int, float)) or weekly_target <= 0:
                 logger.warning(f"Label {label_name} missing valid weekly_target, skipping")
                 return None
+            weekly_target = float(weekly_target)  # Ensure it's a float
 
             # Extract optional fields
             emoji = config_data.get("emoji")

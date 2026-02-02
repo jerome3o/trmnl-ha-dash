@@ -65,8 +65,8 @@ class DashboardRenderer:
     def render(
         self,
         goals: list[Goal],
-        week_start: datetime,
-        week_end: datetime,
+        period_start: datetime,
+        period_end: datetime,
         width: int = 800,
         height: int = 480,
     ) -> tuple[str, str]:
@@ -75,8 +75,8 @@ class DashboardRenderer:
 
         Args:
             goals: List of goals with progress calculated
-            week_start: Start of current week
-            week_end: End of current week
+            period_start: Start of current 2-week period
+            period_end: End of current 2-week period
             width: Image width
             height: Image height
 
@@ -90,7 +90,7 @@ class DashboardRenderer:
         draw = ImageDraw.Draw(image)
 
         # Draw sections
-        self._draw_header(draw, week_start, week_end, width)
+        self._draw_header(draw, period_start, period_end, width)
         self._draw_goals(draw, goals, width, height)
 
         # Convert to monochrome
@@ -106,17 +106,19 @@ class DashboardRenderer:
 
         return filename, str(file_path)
 
-    def _draw_header(self, draw: ImageDraw, week_start: datetime, week_end: datetime, width: int):
-        """Draw header with week info and last update time."""
-        # Week range
-        week_text = f"Week: {week_start.strftime('%b %d')} - {week_end.strftime('%b %d, %Y')}"
-        draw.text((20, 10), week_text, fill="black", font=self.fonts["title"])
+    def _draw_header(self, draw: ImageDraw, period_start: datetime, period_end: datetime, width: int):
+        """Draw header with 2-week period info and last update time."""
+        # Period range
+        period_text = f"{period_start.strftime('%b %d')} - {period_end.strftime('%b %d, %Y')}"
+        draw.text((20, 10), period_text, fill="black", font=self.fonts["title"])
 
-        # Current day and last update on second line
-        day_names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        # Calculate day within 2-week period
         now = datetime.now()
-        day_of_week = (now.weekday() + 1) % 7
-        day_text = f"Day {day_of_week + 1} of 7 ({day_names[day_of_week]})"
+        days_into_period = (now - period_start).days
+        day_of_period = min(days_into_period, 13)  # Cap at 13 (0-indexed)
+        day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        day_name = day_names[(now.weekday() + 1) % 7]
+        day_text = f"Day {day_of_period + 1} of 14 ({day_name})"
         draw.text((20, 32), day_text, fill="black", font=self.fonts["small"])
 
         # Last update time (right-aligned)
@@ -181,23 +183,25 @@ class DashboardRenderer:
         width: int,
         height: int,
         current: int,
-        target: int,
+        target: float,
         target_marker: float,
     ):
         """
-        Draw slim progress bar with dotted target marker.
+        Draw slim progress bar with dashed target marker.
 
-        The bar is divided into segments equal to target.
-        Target marker shows expected progress as a thin dotted line.
+        For integer targets: bar is divided into segments.
+        For fractional targets: smooth bar without segments.
+        Target marker shows expected progress as a dashed line.
         """
-        if target == 0:
+        if target <= 0:
             return
 
-        segment_width = width / target
+        # Check if target is a whole number (for segment drawing)
+        is_integer_target = target == int(target)
 
-        # Draw filled segments (completed)
-        filled_segments = min(current, target)
-        filled_width = int(filled_segments * segment_width)
+        # Calculate fill width based on progress
+        fill_fraction = min(current / target, 1.0)
+        filled_width = int(fill_fraction * width)
 
         if filled_width > 0:
             draw.rectangle(
@@ -212,16 +216,20 @@ class DashboardRenderer:
             width=1,
         )
 
-        # Draw segment dividers (thin lines)
-        for i in range(1, target):
-            seg_x = x + int(i * segment_width)
-            draw.line([seg_x, y, seg_x, y + height], fill="black", width=1)
+        # Draw segment dividers only for integer targets
+        if is_integer_target:
+            int_target = int(target)
+            segment_width = width / int_target
+            for i in range(1, int_target):
+                seg_x = x + int(i * segment_width)
+                draw.line([seg_x, y, seg_x, y + height], fill="black", width=1)
 
         # Draw target marker as dashed vertical line with small arrow
-        marker_x = x + int(target_marker * segment_width)
+        marker_fraction = target_marker / target
+        marker_x = x + int(marker_fraction * width)
         marker_x = max(x + 2, min(marker_x, x + width - 2))  # Clamp with padding
 
-        # Dashed line pattern (more visible than dots)
+        # Dashed line pattern
         dash_length = 4
         gap_length = 3
         marker_top = y - 6
@@ -289,8 +297,8 @@ async def demo_render():
 
         # Render dashboard
         renderer = DashboardRenderer()
-        week_start, week_end = calculator._get_current_week()
-        filename, file_path = renderer.render(goals, week_start, week_end)
+        period_start, period_end = calculator._get_current_period()
+        filename, file_path = renderer.render(goals, period_start, period_end)
 
         print("\n" + "=" * 60)
         print("DASHBOARD RENDERED")

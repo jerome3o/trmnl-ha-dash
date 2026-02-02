@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 class ProgressCalculator:
     """Calculates goal progress from Home Assistant history."""
 
+    # Reference date for 2-week period alignment (a Sunday)
+    PERIOD_ANCHOR = datetime(2020, 1, 5, 0, 0, 0)
+    PERIOD_DAYS = 14  # 2-week periods
+
     def __init__(self, client: HAClient):
         """Initialize with HA client."""
         self.client = client
@@ -23,9 +27,9 @@ class ProgressCalculator:
 
         Uses current counter state and updates goal objects with:
         - current_count: Current counter value
-        - target_by_now: Expected count by today
-        - status: ahead/on_track/behind
-        - days_left: Days remaining in week
+        - target_by_now: Expected count by current time
+        - status: on_track/behind
+        - days_left: Days remaining in 2-week period
 
         Args:
             goals: List of Goal objects
@@ -38,9 +42,9 @@ class ProgressCalculator:
 
         logger.info(f"Calculating progress for {len(goals)} goals...")
 
-        # Get current week boundaries for status display
-        week_start, week_end = self._get_current_week()
-        logger.info(f"Current week: {week_start.date()} to {week_end.date()}")
+        # Get current 2-week period boundaries
+        period_start, period_end = self._get_current_period()
+        logger.info(f"Current 2-week period: {period_start.date()} to {period_end.date()}")
 
         # Get current states for all goal entities
         states = await self.client.send_command("get_states")
@@ -70,16 +74,16 @@ class ProgressCalculator:
                 current_count = 0
 
             # Calculate expected progress
-            day_of_week = self._get_day_of_week(datetime.now())
+            day_of_period = self._get_day_of_period(datetime.now())
             target_by_now = self._calculate_target_by_now(
-                goal.config.weekly_target, day_of_week
+                goal.config.weekly_target, day_of_period
             )
 
             # Determine status
             status = self._calculate_status(current_count, target_by_now)
 
-            # Calculate days left
-            days_left = 6 - day_of_week  # Sunday=0, Saturday=6
+            # Calculate days left in 2-week period
+            days_left = (self.PERIOD_DAYS - 1) - day_of_period
 
             # Update goal object
             goal.current_count = current_count
@@ -94,65 +98,68 @@ class ProgressCalculator:
 
         return goals
 
-    def _get_current_week(self) -> tuple[datetime, datetime]:
+    def _get_current_period(self) -> tuple[datetime, datetime]:
         """
-        Get start and end of current week (Sunday-Saturday).
+        Get start and end of current 2-week period.
+
+        Uses a fixed anchor date to ensure consistent 2-week boundaries.
 
         Returns:
-            Tuple of (week_start, week_end) as datetime objects
+            Tuple of (period_start, period_end) as datetime objects
         """
         now = datetime.now()
 
-        # Calculate days since Sunday (0=Sunday, 6=Saturday)
-        days_since_sunday = (now.weekday() + 1) % 7
+        # Calculate days since anchor
+        days_since_anchor = (now - self.PERIOD_ANCHOR).days
 
-        # Week starts Sunday 00:00:00
-        week_start = (now - timedelta(days=days_since_sunday)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        # Find which 2-week period we're in
+        periods_elapsed = days_since_anchor // self.PERIOD_DAYS
+        day_in_period = days_since_anchor % self.PERIOD_DAYS
 
-        # Week ends Saturday 23:59:59
-        week_end = week_start + timedelta(days=7, seconds=-1)
+        # Period start is the beginning of this 2-week period
+        period_start = self.PERIOD_ANCHOR + timedelta(days=periods_elapsed * self.PERIOD_DAYS)
+        period_start = period_start.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        return week_start, week_end
+        # Period ends 14 days later minus 1 second
+        period_end = period_start + timedelta(days=self.PERIOD_DAYS, seconds=-1)
 
-    def _get_day_of_week(self, dt: datetime) -> int:
+        return period_start, period_end
+
+    def _get_day_of_period(self, dt: datetime) -> int:
         """
-        Get day of week where Sunday=0, Saturday=6.
+        Get day within the current 2-week period (0-13).
 
         Args:
             dt: Datetime to check
 
         Returns:
-            Day of week (0-6)
+            Day of period (0-13)
         """
-        # Python weekday: Monday=0, Sunday=6
-        # Convert to: Sunday=0, Saturday=6
-        return (dt.weekday() + 1) % 7
+        days_since_anchor = (dt - self.PERIOD_ANCHOR).days
+        return days_since_anchor % self.PERIOD_DAYS
 
-
-    def _calculate_target_by_now(self, weekly_target: int, day_of_week: int) -> float:
+    def _calculate_target_by_now(self, period_target: float, day_of_period: int) -> float:
         """
         Calculate expected count by current time (moves smoothly throughout the day).
 
         Args:
-            weekly_target: Goal for the full week (e.g., 4)
-            day_of_week: 0=Sunday, 6=Saturday
+            period_target: Goal for the 2-week period (e.g., 4, or 1.5)
+            day_of_period: 0-13 (day within 2-week period)
 
         Returns:
             Expected count by current moment (fractional days elapsed)
 
         Example:
-            weekly_target = 4, day_of_week = 3 (Wednesday), time = 12:00 noon
-            days_elapsed = 3.5 (3 full days + half of today)
-            = 4 * (3.5/7) = 2.0
+            period_target = 4, day_of_period = 7 (middle of period), time = 12:00 noon
+            days_elapsed = 7.5
+            = 4 * (7.5/14) = 2.14
         """
         now = datetime.now()
         # Calculate fraction of today that has passed (0.0 at midnight, 1.0 at end of day)
         day_fraction = (now.hour * 3600 + now.minute * 60 + now.second) / 86400
         # Total days elapsed including partial current day
-        days_elapsed = day_of_week + day_fraction
-        return weekly_target * (days_elapsed / 7)
+        days_elapsed = day_of_period + day_fraction
+        return period_target * (days_elapsed / self.PERIOD_DAYS)
 
     def _calculate_status(self, current: int, target_by_now: float) -> str:
         """
@@ -176,7 +183,7 @@ class ProgressCalculator:
 
 
 async def demo_progress():
-    """Demo: Calculate and display weekly progress."""
+    """Demo: Calculate and display 2-week progress."""
     import os
     from dotenv import load_dotenv
     from .discovery import GoalDiscovery
@@ -209,15 +216,14 @@ async def demo_progress():
 
         # Display results
         print("\n" + "=" * 60)
-        print("WEEKLY PROGRESS")
+        print("2-WEEK PROGRESS")
         print("=" * 60 + "\n")
 
-        week_start, week_end = calculator._get_current_week()
-        day_of_week = calculator._get_day_of_week(datetime.now())
-        day_names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        period_start, period_end = calculator._get_current_period()
+        day_of_period = calculator._get_day_of_period(datetime.now())
 
-        print(f"Week: {week_start.strftime('%b %d')} - {week_end.strftime('%b %d')}")
-        print(f"Today: {day_names[day_of_week]} (day {day_of_week + 1} of 7)")
+        print(f"Period: {period_start.strftime('%b %d')} - {period_end.strftime('%b %d')}")
+        print(f"Today: Day {day_of_period + 1} of 14")
         print()
 
         for goal in goals:

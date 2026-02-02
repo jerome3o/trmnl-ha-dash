@@ -8,7 +8,7 @@ from typing import Optional
 class GoalConfig:
     """Configuration parsed from HA label."""
     label_id: str
-    weekly_target: int
+    weekly_target: float  # Target for the 2-week period (supports fractional, e.g., 1.5)
     emoji: Optional[str] = None
     sound: Optional[str] = None
 
