@@ -75,8 +75,8 @@ async def render_dashboard() -> tuple[str, str]:
         goals = await calculator.calculate_progress(goals)
 
         # Render dashboard
-        week_start, week_end = calculator._get_current_week()
-        filename, file_path = renderer.render(goals, week_start, week_end)
+        period_start, period_end = calculator._get_current_period()
+        filename, file_path = renderer.render(goals, period_start, period_end)
 
         return filename, file_path
 
