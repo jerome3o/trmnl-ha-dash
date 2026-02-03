@@ -112,13 +112,15 @@ class DashboardRenderer:
         day_fraction = (now.hour * 3600 + now.minute * 60 + now.second) / 86400
         time_fraction = (days_into_period + day_fraction) / 14
 
+        # Draw midweek line FIRST (behind everything else)
+        self._draw_midweek_line(draw, width, height)
+
         # Draw sections
         self._draw_header(draw, period_start, period_end, width, weather)
         goals_area = self._draw_goals(draw, goals, width, height, time_fraction)
 
-        # Draw continuous time indicator line spanning all goals
-        if goals_area:
-            self._draw_time_indicator(draw, goals_area, time_fraction, width)
+        # Draw continuous time indicator line (full height)
+        self._draw_time_indicator(draw, time_fraction, width, height)
 
         # Draw day ticks at bottom of goals area
         if goals_area:
@@ -309,21 +311,33 @@ class DashboardRenderer:
                 if seg_x >= x + filled_width:
                     draw.line([seg_x, y, seg_x, y + height], fill="black", width=1)
 
+    def _draw_midweek_line(self, draw: ImageDraw, width: int, height: int):
+        """Draw light gray midweek line from top to bottom (behind everything)."""
+        bar_width = width - (self.X_MARGIN * 2)
+        midpoint_x = self.X_MARGIN + int((7 / 14) * bar_width)
+
+        # Light gray, wider line, full height
+        draw.line(
+            [midpoint_x, 0, midpoint_x, height],
+            fill="#d0d0d0",  # Light gray
+            width=5,
+        )
+
     def _draw_time_indicator(
         self,
         draw: ImageDraw,
-        goals_area: dict,
         time_fraction: float,
         width: int,
+        height: int,
     ):
-        """Draw continuous dashed vertical line spanning all goals."""
-        bar_width = goals_area["right"] - goals_area["left"]
-        marker_x = goals_area["left"] + int(time_fraction * bar_width)
-        marker_x = max(goals_area["left"] + 2, min(marker_x, goals_area["right"] - 2))
+        """Draw continuous dashed vertical line from top to bottom."""
+        bar_width = width - (self.X_MARGIN * 2)
+        marker_x = self.X_MARGIN + int(time_fraction * bar_width)
+        marker_x = max(self.X_MARGIN + 2, min(marker_x, width - self.X_MARGIN - 2))
 
-        # Extend line from above first bar to below last bar
-        marker_top = goals_area["top"] - 8
-        marker_bottom = goals_area["bottom"] + 8
+        # Full height - from top to bottom
+        marker_top = 0
+        marker_bottom = height
 
         # Dashed line pattern
         dash_length = 4
@@ -339,30 +353,11 @@ class DashboardRenderer:
                 current_y += gap_length
             drawing = not drawing
 
-        # Small downward arrow at top
-        arrow_size = 4
-        draw.polygon(
-            [
-                (marker_x, marker_top),
-                (marker_x - arrow_size, marker_top - arrow_size),
-                (marker_x + arrow_size, marker_top - arrow_size),
-            ],
-            fill="black",
-        )
-
     def _draw_day_ticks(self, draw: ImageDraw, goals_area: dict, width: int):
-        """Draw day ticks for all 14 days with gray midpoint line."""
+        """Draw day ticks for all 14 days."""
         bar_width = goals_area["right"] - goals_area["left"]
         tick_y_top = goals_area["bottom"] + 3
         tick_y_bottom = goals_area["bottom"] + 8
-
-        # Draw gray midpoint line at day 7 (week boundary)
-        midpoint_x = goals_area["left"] + int((7 / 14) * bar_width)
-        draw.line(
-            [midpoint_x, goals_area["top"] - 5, midpoint_x, goals_area["bottom"] + 10],
-            fill="gray",
-            width=3,
-        )
 
         # Draw ticks for all 14 days (bolder)
         for day in range(15):  # 0 through 14
@@ -372,7 +367,7 @@ class DashboardRenderer:
             # Weekend days (0, 6, 7, 8, 13, 14) get slightly longer ticks
             is_weekend = day in [0, 6, 7, 8, 13, 14]
             tick_bottom = tick_y_bottom + (2 if is_weekend else 0)
-            tick_width = 2 if is_weekend else 2
+            tick_width = 2
 
             draw.line([tick_x, tick_y_top, tick_x, tick_bottom], fill="black", width=tick_width)
 
