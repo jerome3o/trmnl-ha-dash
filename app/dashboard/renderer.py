@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 class DashboardRenderer:
     """Renders habit tracker dashboard to image."""
 
+    # Layout constants
+    X_MARGIN = 20
+    HEADER_HEIGHT = 62
+    BOTTOM_MARGIN = 20
+    BAR_HEIGHT = 20  # Taller bars
+
     def __init__(self, output_dir: str = "static/images"):
         """
         Initialize renderer.
@@ -29,24 +35,33 @@ class DashboardRenderer:
         self.fonts = self._load_fonts()
 
     def _load_fonts(self) -> dict:
-        """Load fonts for rendering."""
+        """Load fonts for rendering, including CJK support."""
         fonts = {}
 
-        # Try to find system fonts
+        # Font paths to try - prioritize CJK-capable fonts
         font_paths = [
+            # CJK fonts (support Chinese, Japanese, Korean)
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "/usr/share/fonts/truetype/arphic/uming.ttc",
+            # Standard fonts (fallback)
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             "/System/Library/Fonts/Helvetica.ttc",  # macOS
         ]
 
+        loaded_path = None
         try:
-            # Regular fonts
             for path in font_paths:
                 if Path(path).exists():
                     fonts["header"] = ImageFont.truetype(path, 24)
                     fonts["title"] = ImageFont.truetype(path, 20)
                     fonts["normal"] = ImageFont.truetype(path, 16)
                     fonts["small"] = ImageFont.truetype(path, 14)
+                    loaded_path = path
                     logger.info(f"Loaded fonts from {path}")
                     break
         except Exception as e:
@@ -69,6 +84,7 @@ class DashboardRenderer:
         period_end: datetime,
         width: int = 800,
         height: int = 480,
+        weather: Optional[dict] = None,
     ) -> tuple[str, str]:
         """
         Render the dashboard.
@@ -79,6 +95,7 @@ class DashboardRenderer:
             period_end: End of current 2-week period
             width: Image width
             height: Image height
+            weather: Optional weather data dict with 'temperature', 'condition', etc.
 
         Returns:
             Tuple of (filename, file_path)
@@ -89,9 +106,23 @@ class DashboardRenderer:
         image = Image.new("RGB", (width, height), "white")
         draw = ImageDraw.Draw(image)
 
+        # Calculate time position for the continuous line
+        now = datetime.now()
+        days_into_period = (now - period_start).days
+        day_fraction = (now.hour * 3600 + now.minute * 60 + now.second) / 86400
+        time_fraction = (days_into_period + day_fraction) / 14
+
         # Draw sections
-        self._draw_header(draw, period_start, period_end, width)
-        self._draw_goals(draw, goals, width, height)
+        self._draw_header(draw, period_start, period_end, width, weather)
+        goals_area = self._draw_goals(draw, goals, width, height, time_fraction)
+
+        # Draw continuous time indicator line spanning all goals
+        if goals_area:
+            self._draw_time_indicator(draw, goals_area, time_fraction, width)
+
+        # Draw day ticks at bottom of goals area
+        if goals_area:
+            self._draw_day_ticks(draw, goals_area, width)
 
         # Convert to monochrome
         image = self._convert_to_monochrome(image)
@@ -106,77 +137,121 @@ class DashboardRenderer:
 
         return filename, str(file_path)
 
-    def _draw_header(self, draw: ImageDraw, period_start: datetime, period_end: datetime, width: int):
-        """Draw header with 2-week period info and last update time."""
+    def _draw_header(
+        self,
+        draw: ImageDraw,
+        period_start: datetime,
+        period_end: datetime,
+        width: int,
+        weather: Optional[dict] = None,
+    ):
+        """Draw header with 2-week period info, last update time, and optional weather."""
         # Period range
         period_text = f"{period_start.strftime('%b %d')} - {period_end.strftime('%b %d, %Y')}"
-        draw.text((20, 10), period_text, fill="black", font=self.fonts["title"])
+        draw.text((self.X_MARGIN, 10), period_text, fill="black", font=self.fonts["title"])
 
         # Calculate day within 2-week period
         now = datetime.now()
         days_into_period = (now - period_start).days
-        day_of_period = min(days_into_period, 13)  # Cap at 13 (0-indexed)
+        day_of_period = min(days_into_period, 13)
         day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         day_name = day_names[(now.weekday() + 1) % 7]
         day_text = f"Day {day_of_period + 1} of 14 ({day_name})"
-        draw.text((20, 32), day_text, fill="black", font=self.fonts["small"])
+        draw.text((self.X_MARGIN, 32), day_text, fill="black", font=self.fonts["small"])
+
+        # Weather info (if available)
+        if weather:
+            try:
+                temp = weather.get("temperature", "")
+                condition = weather.get("condition", "")
+                weather_text = f"{temp}° {condition}" if temp else ""
+                if weather_text:
+                    bbox = draw.textbbox((0, 0), weather_text, font=self.fonts["small"])
+                    text_width = bbox[2] - bbox[0]
+                    draw.text((width - text_width - self.X_MARGIN, 10), weather_text, fill="black", font=self.fonts["small"])
+            except Exception as e:
+                logger.warning(f"Failed to render weather: {e}")
 
         # Last update time (right-aligned)
         time_text = f"Updated: {now.strftime('%H:%M')}"
         bbox = draw.textbbox((0, 0), time_text, font=self.fonts["small"])
         text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - 20, 32), time_text, fill="black", font=self.fonts["small"])
+        draw.text((width - text_width - self.X_MARGIN, 32), time_text, fill="black", font=self.fonts["small"])
 
         # Divider line
-        draw.line([20, 52, width - 20, 52], fill="black", width=2)
+        draw.line([self.X_MARGIN, 52, width - self.X_MARGIN, 52], fill="black", width=2)
 
-    def _draw_goals(self, draw: ImageDraw, goals: list[Goal], width: int, height: int):
-        """Draw all goals with progress bars, evenly distributed."""
+    def _draw_goals(
+        self,
+        draw: ImageDraw,
+        goals: list[Goal],
+        width: int,
+        height: int,
+        time_fraction: float,
+    ) -> Optional[dict]:
+        """
+        Draw all goals with progress bars, evenly distributed.
+
+        Returns:
+            Dict with goals area boundaries {top, bottom, left, right} or None if no goals
+        """
         if not goals:
-            return
+            return None
 
-        header_height = 62  # Space used by header
-        bottom_margin = 15  # Margin at bottom
-        available_height = height - header_height - bottom_margin
-
-        # Distribute goals evenly across available space
+        available_height = height - self.HEADER_HEIGHT - self.BOTTOM_MARGIN
         num_goals = len(goals)
         goal_spacing = available_height / num_goals
 
+        bar_positions = []  # Track bar positions for time indicator
+
         for i, goal in enumerate(goals):
-            y_offset = header_height + int(i * goal_spacing)
-            self._draw_goal_row(draw, goal, y_offset, width)
+            y_offset = self.HEADER_HEIGHT + int(i * goal_spacing)
+            bar_y = self._draw_goal_row(draw, goal, y_offset, width)
+            bar_positions.append(bar_y)
 
-    def _draw_goal_row(self, draw: ImageDraw, goal: Goal, y: int, width: int):
-        """Draw a single goal with full-width slim progress bar."""
-        x_margin = 20
+        # Return goals area boundaries
+        if bar_positions:
+            return {
+                "top": bar_positions[0],
+                "bottom": bar_positions[-1] + self.BAR_HEIGHT,
+                "left": self.X_MARGIN,
+                "right": width - self.X_MARGIN,
+            }
+        return None
 
+    def _draw_goal_row(self, draw: ImageDraw, goal: Goal, y: int, width: int) -> int:
+        """
+        Draw a single goal with full-width progress bar.
+
+        Returns:
+            The y position of the progress bar
+        """
         # Goal name with emoji
         if goal.config.emoji:
             name_text = f"{goal.config.emoji} {goal.friendly_name}"
         else:
             name_text = goal.friendly_name
 
-        draw.text((x_margin, y), name_text, fill="black", font=self.fonts["normal"])
+        draw.text((self.X_MARGIN, y), name_text, fill="black", font=self.fonts["normal"])
 
-        # Progress bar - full width, fixed slim height
-        bar_y = y + 20
-        bar_width = width - (x_margin * 2)
-        bar_height = 14  # Slim, consistent height
+        # Progress bar
+        bar_y = y + 22
+        bar_width = width - (self.X_MARGIN * 2)
 
         # Double weekly_target for 2-week period display
         period_target = goal.config.weekly_target * 2
 
         self._draw_progress_bar(
             draw,
-            x=x_margin,
+            x=self.X_MARGIN,
             y=bar_y,
             width=bar_width,
-            height=bar_height,
+            height=self.BAR_HEIGHT,
             current=goal.current_count,
             target=period_target,
-            target_marker=goal.target_by_now,
         )
+
+        return bar_y
 
     def _draw_progress_bar(
         self,
@@ -187,30 +262,36 @@ class DashboardRenderer:
         height: int,
         current: int,
         target: float,
-        target_marker: float,
     ):
         """
-        Draw slim progress bar with dashed target marker.
+        Draw progress bar with gray dividers on filled segments.
 
         For integer targets: bar is divided into segments.
         For fractional targets: smooth bar without segments.
-        Target marker shows expected progress as a dashed line.
         """
         if target <= 0:
             return
 
-        # Check if target is a whole number (for segment drawing)
         is_integer_target = target == int(target)
-
-        # Calculate fill width based on progress
         fill_fraction = min(current / target, 1.0)
         filled_width = int(fill_fraction * width)
 
+        # Draw filled portion
         if filled_width > 0:
             draw.rectangle(
                 [x, y, x + filled_width, y + height],
                 fill="black",
             )
+
+            # Draw gray/white dividers on filled segments so you can see increments
+            if is_integer_target:
+                int_target = int(target)
+                segment_width = width / int_target
+                for i in range(1, int_target):
+                    seg_x = x + int(i * segment_width)
+                    if seg_x < x + filled_width:
+                        # Gray line on filled portion
+                        draw.line([seg_x, y, seg_x, y + height], fill="white", width=2)
 
         # Draw bar outline
         draw.rectangle(
@@ -219,24 +300,34 @@ class DashboardRenderer:
             width=1,
         )
 
-        # Draw segment dividers only for integer targets
+        # Draw segment dividers on unfilled portion
         if is_integer_target:
             int_target = int(target)
             segment_width = width / int_target
             for i in range(1, int_target):
                 seg_x = x + int(i * segment_width)
-                draw.line([seg_x, y, seg_x, y + height], fill="black", width=1)
+                if seg_x >= x + filled_width:
+                    draw.line([seg_x, y, seg_x, y + height], fill="black", width=1)
 
-        # Draw target marker as dashed vertical line with small arrow
-        marker_fraction = target_marker / target
-        marker_x = x + int(marker_fraction * width)
-        marker_x = max(x + 2, min(marker_x, x + width - 2))  # Clamp with padding
+    def _draw_time_indicator(
+        self,
+        draw: ImageDraw,
+        goals_area: dict,
+        time_fraction: float,
+        width: int,
+    ):
+        """Draw continuous dashed vertical line spanning all goals."""
+        bar_width = goals_area["right"] - goals_area["left"]
+        marker_x = goals_area["left"] + int(time_fraction * bar_width)
+        marker_x = max(goals_area["left"] + 2, min(marker_x, goals_area["right"] - 2))
+
+        # Extend line from above first bar to below last bar
+        marker_top = goals_area["top"] - 8
+        marker_bottom = goals_area["bottom"] + 8
 
         # Dashed line pattern
         dash_length = 4
         gap_length = 3
-        marker_top = y - 6
-        marker_bottom = y + height + 6
         current_y = marker_top
         drawing = True
         while current_y < marker_bottom:
@@ -249,7 +340,7 @@ class DashboardRenderer:
             drawing = not drawing
 
         # Small downward arrow at top
-        arrow_size = 3
+        arrow_size = 4
         draw.polygon(
             [
                 (marker_x, marker_top),
@@ -259,19 +350,31 @@ class DashboardRenderer:
             fill="black",
         )
 
-        # Draw weekend indicators (subtle tick marks below the bar)
-        # For a 2-week period starting Sunday:
-        # - Day 0: Sunday (start of period)
-        # - Day 6: Saturday (start of middle weekend)
-        # - Day 7: Week boundary (middle of weekend)
-        # - Day 8: Monday (end of middle weekend)
-        # - Day 14: End of period
-        tick_y_top = y + height + 2
-        tick_y_bottom = y + height + 5
-        for day in [0, 6, 7, 8, 14]:  # Start, weekend start, week boundary, weekend end, end
-            tick_x = x + int((day / 14) * width)
-            tick_x = max(x, min(tick_x, x + width))
-            draw.line([tick_x, tick_y_top, tick_x, tick_y_bottom], fill="black", width=1)
+    def _draw_day_ticks(self, draw: ImageDraw, goals_area: dict, width: int):
+        """Draw day ticks for all 14 days with gray midpoint line."""
+        bar_width = goals_area["right"] - goals_area["left"]
+        tick_y_top = goals_area["bottom"] + 3
+        tick_y_bottom = goals_area["bottom"] + 8
+
+        # Draw gray midpoint line at day 7 (week boundary)
+        midpoint_x = goals_area["left"] + int((7 / 14) * bar_width)
+        draw.line(
+            [midpoint_x, goals_area["top"] - 5, midpoint_x, goals_area["bottom"] + 10],
+            fill="gray",
+            width=3,
+        )
+
+        # Draw ticks for all 14 days (bolder)
+        for day in range(15):  # 0 through 14
+            tick_x = goals_area["left"] + int((day / 14) * bar_width)
+            tick_x = max(goals_area["left"], min(tick_x, goals_area["right"]))
+
+            # Weekend days (0, 6, 7, 8, 13, 14) get slightly longer ticks
+            is_weekend = day in [0, 6, 7, 8, 13, 14]
+            tick_bottom = tick_y_bottom + (2 if is_weekend else 0)
+            tick_width = 2 if is_weekend else 2
+
+            draw.line([tick_x, tick_y_top, tick_x, tick_bottom], fill="black", width=tick_width)
 
     def _convert_to_monochrome(self, image: Image) -> Image:
         """Convert image to monochrome for e-ink display."""

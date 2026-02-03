@@ -46,6 +46,38 @@ def get_base_url(request: Request) -> str:
     return f"{request.url.scheme}://{request.headers.get('host', 'localhost')}"
 
 
+async def get_weather(client: HAClient) -> Optional[dict]:
+    """
+    Fetch weather data from Home Assistant.
+
+    Tries to find a weather entity and extract temperature and condition.
+    Returns None if weather is not available or fails.
+    """
+    try:
+        states = await client.send_command("get_states")
+
+        # Look for weather entities
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("weather."):
+                condition = state.get("state", "")
+                attributes = state.get("attributes", {})
+                temperature = attributes.get("temperature")
+
+                if temperature is not None:
+                    return {
+                        "temperature": round(temperature),
+                        "condition": condition.replace("_", " ").title(),
+                    }
+
+        logger.debug("No weather entity found in Home Assistant")
+        return None
+
+    except Exception as e:
+        logger.warning(f"Failed to fetch weather from HA: {e}")
+        return None
+
+
 async def render_dashboard() -> tuple[str, str]:
     """
     Render fresh dashboard from Home Assistant data.
@@ -74,9 +106,12 @@ async def render_dashboard() -> tuple[str, str]:
         calculator = ProgressCalculator(client)
         goals = await calculator.calculate_progress(goals)
 
+        # Try to get weather (optional, may fail)
+        weather = await get_weather(client)
+
         # Render dashboard
         period_start, period_end = calculator._get_current_period()
-        filename, file_path = renderer.render(goals, period_start, period_end)
+        filename, file_path = renderer.render(goals, period_start, period_end, weather=weather)
 
         return filename, file_path
 
