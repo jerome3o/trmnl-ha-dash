@@ -312,15 +312,18 @@ class DashboardRenderer:
                     draw.line([seg_x, y, seg_x, y + height], fill="black", width=1)
 
     def _draw_midweek_line(self, draw: ImageDraw, width: int, height: int):
-        """Draw light gray midweek line from top to bottom (behind everything)."""
+        """Draw light gray midweek line from header divider to bottom (behind everything)."""
         bar_width = width - (self.X_MARGIN * 2)
         midpoint_x = self.X_MARGIN + int((7 / 14) * bar_width)
 
-        # Light gray, wider line, full height
+        # Weekend is 2 days (Sat-Sun), so width = 2/14 of bar
+        weekend_width = int((2 / 14) * bar_width)
+
+        # Light gray, thick as weekend, from header line to bottom
         draw.line(
-            [midpoint_x, 0, midpoint_x, height],
+            [midpoint_x, 52, midpoint_x, height],  # Start at header divider (y=52)
             fill="#d0d0d0",  # Light gray
-            width=5,
+            width=weekend_width,
         )
 
     def _draw_time_indicator(
@@ -330,13 +333,13 @@ class DashboardRenderer:
         width: int,
         height: int,
     ):
-        """Draw continuous dashed vertical line from top to bottom."""
+        """Draw continuous dashed vertical line from header divider to bottom."""
         bar_width = width - (self.X_MARGIN * 2)
         marker_x = self.X_MARGIN + int(time_fraction * bar_width)
         marker_x = max(self.X_MARGIN + 2, min(marker_x, width - self.X_MARGIN - 2))
 
-        # Full height - from top to bottom
-        marker_top = 0
+        # From header divider to bottom
+        marker_top = 52  # Header divider line
         marker_bottom = height
 
         # Dashed line pattern
