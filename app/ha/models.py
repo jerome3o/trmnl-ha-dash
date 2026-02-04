@@ -11,6 +11,7 @@ class GoalConfig:
     weekly_target: float  # Target for the 2-week period (supports fractional, e.g., 1.5)
     emoji: Optional[str] = None
     sound: Optional[str] = None
+    hours_offset: float = 0.0  # Grace period in hours (e.g., 18 = due at 6pm instead of midnight)
 
 
 @dataclass

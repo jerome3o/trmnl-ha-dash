@@ -251,6 +251,7 @@ class DashboardRenderer:
             height=self.BAR_HEIGHT,
             current=goal.current_count,
             target=period_target,
+            hours_offset=goal.config.hours_offset,
         )
 
         return bar_y
@@ -264,24 +265,36 @@ class DashboardRenderer:
         height: int,
         current: int,
         target: float,
+        hours_offset: float = 0.0,
     ):
         """
         Draw progress bar with gray dividers on filled segments.
 
         For integer targets: bar is divided into segments.
         For fractional targets: smooth bar without segments.
+        hours_offset adds a "free" filled block at the start (grace period).
         """
         if target <= 0:
             return
 
         is_integer_target = target == int(target)
-        fill_fraction = min(current / target, 1.0)
-        filled_width = int(fill_fraction * width)
 
-        # Draw filled portion
-        if filled_width > 0:
+        # Calculate offset width (grace period shown as filled at start)
+        # hours_offset / 24 gives days, / 14 gives fraction of 2-week period
+        offset_fraction = (hours_offset / 24.0) / 14.0
+        offset_width = int(offset_fraction * width)
+
+        # Calculate filled width from actual progress
+        fill_fraction = min(current / target, 1.0)
+        progress_width = int(fill_fraction * width)
+
+        # Total filled = offset + progress (but don't exceed bar width)
+        total_filled_width = min(offset_width + progress_width, width)
+
+        # Draw filled portion (offset + progress combined)
+        if total_filled_width > 0:
             draw.rectangle(
-                [x, y, x + filled_width, y + height],
+                [x, y, x + total_filled_width, y + height],
                 fill="black",
             )
 
@@ -291,8 +304,8 @@ class DashboardRenderer:
                 segment_width = width / int_target
                 for i in range(1, int_target):
                     seg_x = x + int(i * segment_width)
-                    if seg_x < x + filled_width:
-                        # Gray line on filled portion
+                    if seg_x < x + total_filled_width:
+                        # White line on filled portion
                         draw.line([seg_x, y, seg_x, y + height], fill="white", width=2)
 
         # Draw bar outline
@@ -308,7 +321,7 @@ class DashboardRenderer:
             segment_width = width / int_target
             for i in range(1, int_target):
                 seg_x = x + int(i * segment_width)
-                if seg_x >= x + filled_width:
+                if seg_x >= x + total_filled_width:
                     draw.line([seg_x, y, seg_x, y + height], fill="black", width=1)
 
     def _draw_midweek_line(self, draw: ImageDraw, width: int, height: int):
