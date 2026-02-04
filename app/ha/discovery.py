@@ -111,12 +111,17 @@ class GoalDiscovery:
             # Extract optional fields
             emoji = config_data.get("emoji")
             sound = config_data.get("sound")
+            hours_offset = config_data.get("hours_offset", 0.0)
+            if not isinstance(hours_offset, (int, float)):
+                hours_offset = 0.0
+            hours_offset = float(hours_offset)
 
             return GoalConfig(
                 label_id=label_name,  # Store the name, not internal ID
                 weekly_target=weekly_target,
                 emoji=emoji,
                 sound=sound,
+                hours_offset=hours_offset,
             )
 
         except json.JSONDecodeError as e:

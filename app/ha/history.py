@@ -77,7 +77,7 @@ class ProgressCalculator:
             day_of_period = self._get_day_of_period(datetime.now())
             period_target = goal.config.weekly_target * 2  # Double for 2-week period
             target_by_now = self._calculate_target_by_now(
-                period_target, day_of_period
+                period_target, day_of_period, goal.config.hours_offset
             )
 
             # Determine status
@@ -139,13 +139,16 @@ class ProgressCalculator:
         days_since_anchor = (dt - self.PERIOD_ANCHOR).days
         return days_since_anchor % self.PERIOD_DAYS
 
-    def _calculate_target_by_now(self, period_target: float, day_of_period: int) -> float:
+    def _calculate_target_by_now(
+        self, period_target: float, day_of_period: int, hours_offset: float = 0.0
+    ) -> float:
         """
         Calculate expected count by current time (moves smoothly throughout the day).
 
         Args:
             period_target: Goal for the 2-week period (e.g., 4, or 1.5)
             day_of_period: 0-13 (day within 2-week period)
+            hours_offset: Grace period in hours (e.g., 18 means due at 6pm not midnight)
 
         Returns:
             Expected count by current moment (fractional days elapsed)
@@ -154,12 +157,21 @@ class ProgressCalculator:
             period_target = 4, day_of_period = 7 (middle of period), time = 12:00 noon
             days_elapsed = 7.5
             = 4 * (7.5/14) = 2.14
+
+            With hours_offset = 18:
+            days_elapsed = 7.5 - (18/24) = 6.75
+            = 4 * (6.75/14) = 1.93
         """
         now = datetime.now()
         # Calculate fraction of today that has passed (0.0 at midnight, 1.0 at end of day)
         day_fraction = (now.hour * 3600 + now.minute * 60 + now.second) / 86400
         # Total days elapsed including partial current day
         days_elapsed = day_of_period + day_fraction
+
+        # Apply hours offset (subtract grace period, but don't go below 0)
+        offset_days = hours_offset / 24.0
+        days_elapsed = max(0.0, days_elapsed - offset_days)
+
         return period_target * (days_elapsed / self.PERIOD_DAYS)
 
     def _calculate_status(self, current: int, target_by_now: float) -> str:
